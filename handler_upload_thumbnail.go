@@ -5,6 +5,9 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"os"
+	"path/filepath"
+	"strings"
 
 	"github.com/bootdotdev/learn-file-storage-s3-golang-starter/internal/auth"
 	"github.com/google/uuid"
@@ -30,7 +33,7 @@ func (cfg *apiConfig) handlerUploadThumbnail(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
-	fmt.Println("uploading thumbnail for video", videoID, "by user", userID)
+	log.Println("uploading thumbnail for video", videoID, "by user", userID)
 
 	// TODO: implement the upload here
 	const maxMemory = 10 << 20
@@ -47,13 +50,6 @@ func (cfg *apiConfig) handlerUploadThumbnail(w http.ResponseWriter, r *http.Requ
 	mediaType := header.Header.Get("Content-Type")
 	log.Println("Media type of the thumbnail:", mediaType)
 
-	// Read the file data into memory (be cautious with large files)
-	data, err := io.ReadAll(file)
-	if err != nil {
-		respondWithError(w, http.StatusInternalServerError, "Couldn't read thumbnail data", err)
-		return
-	}
-
 	videoMetaData, err := cfg.db.GetVideo(videoID)
 	if err != nil {
 		respondWithError(w, http.StatusInternalServerError, "Couldn't get video data", err)
@@ -65,13 +61,26 @@ func (cfg *apiConfig) handlerUploadThumbnail(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
-	videoThumbnails[videoID] = thumbnail{
-		data:      data,
-		mediaType: mediaType,
+	fileExtension := strings.Split(mediaType, "/")[1]
+
+	filePath := filepath.Join(cfg.assetsRoot, fmt.Sprintf("%s.%s", videoID, fileExtension))
+
+	newFile, err := os.Create(filePath)
+	if err != nil {
+		respondWithError(w, http.StatusInternalServerError, "Couldn't create thumbnail file", err)
+		return
+	}
+	defer newFile.Close()
+
+	_, err = io.Copy(newFile, file)
+	if err != nil {
+		respondWithError(w, http.StatusInternalServerError, "Couldn't write thumbnail data", err)
+		return
 	}
 
-	newThumbnailURL := fmt.Sprintf("http://localhost:%s/api/thumbnails/%s", cfg.port, videoID)
-	videoMetaData.ThumbnailURL = &newThumbnailURL
+	thumbnailURL := fmt.Sprintf("http://localhost:%s/assets/%s.%s", cfg.port, videoID, fileExtension)
+
+	videoMetaData.ThumbnailURL = &thumbnailURL
 
 	err = cfg.db.UpdateVideo(videoMetaData)
 	if err != nil {
