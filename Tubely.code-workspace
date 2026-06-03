@@ -5,6 +5,6 @@
 		}
 	],
 	"settings": {
-		"go.goroot": ""
+		"go.goroot": "/home/lucas/.local/opt/go-v1.26.3"
 	}
 }

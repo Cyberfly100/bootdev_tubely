@@ -1,6 +1,6 @@
 out
 *.db
 .env
-.code-workspace
+*.code-workspace
 assets/
 samples/
