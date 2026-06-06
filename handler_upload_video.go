@@ -137,9 +137,11 @@ func (cfg *apiConfig) handlerUploadVideo(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	videoURL := "https://" + cfg.s3Bucket + ".s3." + cfg.s3Region + ".amazonaws.com/" + objectKey
+	// videoURL := "https://" + cfg.s3Bucket + ".s3." + cfg.s3Region + ".amazonaws.com/" + objectKey
 
-	videoMetaData.VideoURL = &videoURL
+	videoURLComponents := cfg.s3Bucket + "," + objectKey
+
+	videoMetaData.VideoURL = &videoURLComponents
 
 	err = cfg.db.UpdateVideo(videoMetaData)
 	if err != nil {
@@ -147,5 +149,11 @@ func (cfg *apiConfig) handlerUploadVideo(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	respondWithJSON(w, http.StatusOK, videoMetaData)
+	signedVideoMetaData, err := cfg.dbVideoToSignedVideo(videoMetaData)
+	if err != nil {
+		respondWithError(w, http.StatusInternalServerError, "Couldn't generate signed URL for video", err)
+		return
+	}
+
+	respondWithJSON(w, http.StatusOK, signedVideoMetaData)
 }

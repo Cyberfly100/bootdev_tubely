@@ -2,9 +2,17 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
+	"fmt"
 	"math"
 	"os/exec"
+	"strings"
+	"time"
+
+	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/service/s3"
+	"github.com/bootdotdev/learn-file-storage-s3-golang-starter/internal/database"
 )
 
 func getVideoAspectRatio(filePath string) (string, error) {
@@ -55,4 +63,40 @@ func processVideoForFastStart(filePath string) (string, error) {
 		return "", err
 	}
 	return outputPath, nil
+}
+
+func generatePresigedURL(s3Client *s3.Client, bucket, key string, expireTime time.Duration) (string, error) {
+	presignClient := s3.NewPresignClient(s3Client)
+	presignGetObjectParams := &s3.GetObjectInput{
+		Bucket: aws.String(bucket),
+		Key:    aws.String(key),
+	}
+	presignGetObjectOutput, err := presignClient.PresignGetObject(context.Background(), presignGetObjectParams, s3.WithPresignExpires(expireTime))
+	if err != nil {
+		return "", err
+	}
+	return presignGetObjectOutput.URL, nil
+}
+
+func (cfg *apiConfig) dbVideoToSignedVideo(video database.Video) (database.Video, error) {
+	if video.VideoURL == nil {
+		return video, nil
+	}
+	urlComponents := strings.Split(*video.VideoURL, ",")
+	if len(urlComponents) != 2 {
+		err := cfg.db.DeleteVideo(video.ID)
+		if err != nil {
+			return video, fmt.Errorf("couldn't delete video with invalid URL from database: %w", err)
+		}
+		return video, fmt.Errorf("invalid video URL format")
+	}
+	bucket := urlComponents[0]
+	key := urlComponents[1]
+
+	signedURL, err := generatePresigedURL(cfg.s3Client, bucket, key, 15*time.Minute)
+	if err != nil {
+		return video, fmt.Errorf("failed to generate signed URL: %w", err)
+	}
+	video.VideoURL = &signedURL
+	return video, nil
 }
